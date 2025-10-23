@@ -62,6 +62,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
+import android.graphics.Typeface;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.Config;
@@ -110,6 +111,7 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String TOOLBAR_COLOR = "toolbarcolor";
     private static final String CLOSE_BUTTON_CAPTION = "closebuttoncaption";
     private static final String CLOSE_BUTTON_COLOR = "closebuttoncolor";
+    private static final String SCAN_BUTTON_COLOR = "scanbuttoncolor";
     private static final String LEFT_TO_RIGHT = "lefttoright";
     private static final String HIDE_NAVIGATION = "hidenavigationbuttons";
     private static final String NAVIGATION_COLOR = "navigationbuttoncolor";
@@ -120,8 +122,10 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String FULLSCREEN = "fullscreen";
 
     private static final int TOOLBAR_HEIGHT = 48;
+    private static final String GLYPH_CLOSE = "\uf12a";
+    private static final String GLYPH_SCAN = "\uebfd";
 
-    private static final List customizableOptions = Arrays.asList(CLOSE_BUTTON_CAPTION, TOOLBAR_COLOR, NAVIGATION_COLOR, CLOSE_BUTTON_COLOR, FOOTER_COLOR);
+    private static final List customizableOptions = Arrays.asList(CLOSE_BUTTON_CAPTION, TOOLBAR_COLOR, NAVIGATION_COLOR, CLOSE_BUTTON_COLOR, FOOTER_COLOR, SCAN_BUTTON_COLOR);
 
     private InAppBrowserDialog dialog;
     private WebView inAppWebView;
@@ -140,9 +144,11 @@ public class InAppBrowser extends CordovaPlugin {
     private final static int FILECHOOSER_REQUESTCODE = 1;
     private String closeButtonCaption = "";
     private String closeButtonColor = "";
+    private String scanButtonColor = "";
     private boolean leftToRight = false;
     private int toolbarColor = android.graphics.Color.LTGRAY;
     private boolean hideNavigationButtons = false;
+    private boolean showScanButton = false;
     private String navigationButtonColor = "";
     private boolean hideUrlBar = false;
     private boolean showFooter = false;
@@ -151,6 +157,7 @@ public class InAppBrowser extends CordovaPlugin {
     private boolean fullscreen = true;
     private String[] allowedSchemes;
     private InAppBrowserClient currentClient;
+    private Typeface iconsTypeFace;
 
     /**
      * Executes the request and returns PluginResult.
@@ -689,6 +696,10 @@ public class InAppBrowser extends CordovaPlugin {
             if (closeButtonColorSet != null) {
                 closeButtonColor = closeButtonColorSet;
             }
+            String scanButtonColorSet = features.get(SCAN_BUTTON_COLOR);
+            if (scanButtonColorSet != null) {
+                scanButtonColor = scanButtonColorSet;
+            }
             String leftToRightSet = features.get(LEFT_TO_RIGHT);
             leftToRight = leftToRightSet != null && leftToRightSet.equals("yes");
 
@@ -715,6 +726,10 @@ public class InAppBrowser extends CordovaPlugin {
             if (fullscreenSet != null) {
                 fullscreen = fullscreenSet.equals("yes") ? true : false;
             }
+            String showScanSet = features.get("showscanbutton");
+            if (showScanSet != null) {
+                showScanButton = showScanSet.equals("yes") ? true : false;
+            }
         }
 
         final CordovaWebView thatWebView = this.webView;
@@ -735,6 +750,45 @@ public class InAppBrowser extends CordovaPlugin {
                 return value;
             }
 
+            
+            private void crateIconTypeFace () {
+                if (iconsTypeFace == null) {
+                    try {
+                        iconsTypeFace = Typeface.createFromAsset(
+                            cordova.getActivity().getAssets(),
+                            "fonts/GKIconFont.ttf"
+                        );
+                    } catch (Exception e) {
+                        LOG.e(LOG_TAG, "Failed to load GKIconFont.ttf: " + e.getMessage());
+                    }
+                }
+            }
+
+            private View createScanButton(int id) {
+                View _scan;
+                Resources activityRes = cordova.getActivity().getResources();
+
+                TextView scan = new TextView(cordova.getActivity());
+                scan.setTypeface(iconsTypeFace);
+                scan.setText(GLYPH_SCAN);
+                scan.setTextSize(24);
+                if (scanButtonColor != "") scan.setTextColor(android.graphics.Color.parseColor(scanButtonColor));
+                scan.setGravity(Gravity.CENTER_VERTICAL);
+                scan.setPadding(this.dpToPixels(24), 0, this.dpToPixels(24), 0);
+
+                RelativeLayout.LayoutParams scanLayoutParams =
+                        new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
+                scanLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                scan.setLayoutParams(scanLayoutParams);
+                
+                _scan = scan;
+
+               _scan.setOnClickListener(InAppBrowser.this.onAction("scan"));
+
+
+                return _scan;
+            }
+
             private View createCloseButton(int id) {
                 View _close;
                 Resources activityRes = cordova.getActivity().getResources();
@@ -743,43 +797,40 @@ public class InAppBrowser extends CordovaPlugin {
                     // Use TextView for text
                     TextView close = new TextView(cordova.getActivity());
                     close.setText(closeButtonCaption);
-                    close.setTextSize(20);
+                    close.setTextSize(24);
                     if (closeButtonColor != "") close.setTextColor(android.graphics.Color.parseColor(closeButtonColor));
                     close.setGravity(android.view.Gravity.CENTER_VERTICAL);
-                    close.setPadding(this.dpToPixels(10), 0, this.dpToPixels(10), 0);
+                    close.setPadding(this.dpToPixels(32), this.dpToPixels(8), this.dpToPixels(16), this.dpToPixels(8));
                     _close = close;
                 }
                 else {
-                    ImageButton close = new ImageButton(cordova.getActivity());
-                    int closeResId = activityRes.getIdentifier("ic_action_remove", "drawable", cordova.getActivity().getPackageName());
-                    Drawable closeIcon = activityRes.getDrawable(closeResId);
-                    if (closeButtonColor != "") close.setColorFilter(android.graphics.Color.parseColor(closeButtonColor));
-                    close.setImageDrawable(closeIcon);
-                    close.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    close.getAdjustViewBounds();
+                    TextView close = new TextView(cordova.getActivity());
+                    close.setTypeface(iconsTypeFace);
+                    close.setText(GLYPH_CLOSE);
+                    close.setTextSize(24);
+                    close.setGravity(Gravity.CENTER);
+                    if (!closeButtonColor.isEmpty()) close.setTextColor(Color.parseColor(closeButtonColor));
+                    close.setPadding(this.dpToPixels(24), 0, this.dpToPixels(24), 0);
 
                     _close = close;
                 }
 
                 RelativeLayout.LayoutParams closeLayoutParams = new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-                if (leftToRight) closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-                else closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+                // else closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
                 _close.setLayoutParams(closeLayoutParams);
                 _close.setBackground(null);
 
                 _close.setContentDescription("Close Button");
                 _close.setId(Integer.valueOf(id));
-                _close.setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) {
-                        closeDialog();
-                    }
-                });
+                _close.setOnClickListener(InAppBrowser.this.onAction("close"));
 
                 return _close;
             }
 
             @SuppressLint("NewApi")
             public void run() {
+                this.crateIconTypeFace();
 
                 // CB-6702 InAppBrowser hangs when opening more than one instance
                 if (dialog != null) {
@@ -896,6 +947,11 @@ public class InAppBrowser extends CordovaPlugin {
                 int closeButtonId = leftToRight ? 1 : 5;
                 View close = createCloseButton(closeButtonId);
                 toolbar.addView(close);
+
+                // Header Scan button
+                int scanuttonId = leftToRight ? 1 : 5;
+                View scan = createScanButton(scanuttonId);
+                toolbar.addView(scan);
 
                 // Footer
                 RelativeLayout footer = new RelativeLayout(cordova.getActivity());
@@ -1073,6 +1129,26 @@ public class InAppBrowser extends CordovaPlugin {
         };
         this.cordova.getActivity().runOnUiThread(runnable);
         return "";
+    }
+
+    
+    private void sendAction(String action) {
+        try {
+            sendUpdate(
+                new JSONObject()
+                    .put("type", MESSAGE_EVENT)
+                    .put("data", new JSONObject().put("action", action)),
+                true
+            );
+        } catch (JSONException e) {
+            LOG.e(LOG_TAG, "Error sending " + action + " message", e);
+        }
+    }
+
+    private View.OnClickListener onAction(final String action) {
+        return new View.OnClickListener() {
+            @Override public void onClick(View v) { InAppBrowser.this.sendAction(action); }
+        };
     }
 
     /**
