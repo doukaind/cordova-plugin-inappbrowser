@@ -24,17 +24,22 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.res.ColorStateList;
 import android.os.Parcelable;
 import android.provider.Browser;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.graphics.Color;
 import android.net.http.SslError;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -45,6 +50,7 @@ import android.view.WindowManager.LayoutParams;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
+import android.widget.FrameLayout;
 import android.webkit.HttpAuthHandler;
 import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
@@ -59,6 +65,7 @@ import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -112,6 +119,8 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String CLOSE_BUTTON_CAPTION = "closebuttoncaption";
     private static final String CLOSE_BUTTON_COLOR = "closebuttoncolor";
     private static final String SCAN_BUTTON_COLOR = "scanbuttoncolor";
+    private static final String ACTIVE_BUTTON_COLOR = "activebuttoncolor";
+    private static final String SHOW_SCAN = "showscanbutton";
     private static final String LEFT_TO_RIGHT = "lefttoright";
     private static final String HIDE_NAVIGATION = "hidenavigationbuttons";
     private static final String NAVIGATION_COLOR = "navigationbuttoncolor";
@@ -125,7 +134,7 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String GLYPH_CLOSE = "\uf12a";
     private static final String GLYPH_SCAN = "\uebfd";
 
-    private static final List customizableOptions = Arrays.asList(CLOSE_BUTTON_CAPTION, TOOLBAR_COLOR, NAVIGATION_COLOR, CLOSE_BUTTON_COLOR, FOOTER_COLOR, SCAN_BUTTON_COLOR);
+    private static final List customizableOptions = Arrays.asList(CLOSE_BUTTON_CAPTION, TOOLBAR_COLOR, NAVIGATION_COLOR, CLOSE_BUTTON_COLOR, FOOTER_COLOR, SCAN_BUTTON_COLOR, ACTIVE_BUTTON_COLOR);
 
     private InAppBrowserDialog dialog;
     private WebView inAppWebView;
@@ -145,6 +154,7 @@ public class InAppBrowser extends CordovaPlugin {
     private String closeButtonCaption = "";
     private String closeButtonColor = "";
     private String scanButtonColor = "";
+    private String activeButtonColor = "";
     private boolean leftToRight = false;
     private int toolbarColor = android.graphics.Color.LTGRAY;
     private boolean hideNavigationButtons = false;
@@ -700,6 +710,10 @@ public class InAppBrowser extends CordovaPlugin {
             if (scanButtonColorSet != null) {
                 scanButtonColor = scanButtonColorSet;
             }
+            String activeButtonColorSet = features.get(ACTIVE_BUTTON_COLOR);
+            if (activeButtonColorSet != null) {
+                activeButtonColor = activeButtonColorSet;
+            }
             String leftToRightSet = features.get(LEFT_TO_RIGHT);
             leftToRight = leftToRightSet != null && leftToRightSet.equals("yes");
 
@@ -726,7 +740,7 @@ public class InAppBrowser extends CordovaPlugin {
             if (fullscreenSet != null) {
                 fullscreen = fullscreenSet.equals("yes") ? true : false;
             }
-            String showScanSet = features.get("showscanbutton");
+            String showScanSet = features.get(SHOW_SCAN);
             if (showScanSet != null) {
                 showScanButton = showScanSet.equals("yes") ? true : false;
             }
@@ -764,68 +778,150 @@ public class InAppBrowser extends CordovaPlugin {
                 }
             }
 
-            private View createScanButton(int id) {
-                View _scan;
-                Resources activityRes = cordova.getActivity().getResources();
+            private FrameLayout buildIconWrapperAligned(int relativeAlignRule) {
+                final int toolbarSizePx = dpToPixels(TOOLBAR_HEIGHT);
+                final float cornerRadiusPx = dpToPixels(2);
 
-                TextView scan = new TextView(cordova.getActivity());
-                scan.setTypeface(iconsTypeFace);
-                scan.setText(GLYPH_SCAN);
-                scan.setTextSize(24);
-                if (scanButtonColor != "") scan.setTextColor(android.graphics.Color.parseColor(scanButtonColor));
-                scan.setGravity(Gravity.CENTER_VERTICAL);
-                scan.setPadding(this.dpToPixels(24), 0, this.dpToPixels(24), 0);
+                FrameLayout wrapperView = new FrameLayout(cordova.getActivity());
+                RelativeLayout.LayoutParams wrapperLayoutParams =
+                        new RelativeLayout.LayoutParams(toolbarSizePx, toolbarSizePx);
+                wrapperLayoutParams.addRule(relativeAlignRule);
+                wrapperView.setLayoutParams(wrapperLayoutParams);
 
-                RelativeLayout.LayoutParams scanLayoutParams =
-                        new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-                scanLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                scan.setLayoutParams(scanLayoutParams);
-                
-                _scan = scan;
+                applyActiveBackground(wrapperView, cornerRadiusPx);
 
-               _scan.setOnClickListener(InAppBrowser.this.onAction("scan"));
+                wrapperView.setClickable(true);
+                wrapperView.setFocusable(true);
+                return wrapperView;
+            }
 
+            private TextView buildCenteredGlyphTextView(String glyph, String hexColorOrEmpty) {
+                TextView glyphTextView = new TextView(cordova.getActivity());
+                glyphTextView.setTypeface(iconsTypeFace);
+                glyphTextView.setText(glyph);
+                glyphTextView.setTextSize(24);
+                glyphTextView.setGravity(android.view.Gravity.CENTER);
 
-                return _scan;
+                if (hexColorOrEmpty != null && !hexColorOrEmpty.isEmpty()) {
+                    glyphTextView.setTextColor(android.graphics.Color.parseColor(hexColorOrEmpty));
+                } else {
+                    glyphTextView.setTextColor(android.graphics.Color.BLACK);
+                }
+
+                FrameLayout.LayoutParams glyphLayoutParams = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        android.view.Gravity.CENTER
+                );
+                glyphTextView.setLayoutParams(glyphLayoutParams);
+
+                applyPressedTextColor(glyphTextView);
+                return glyphTextView;
+            }
+
+            private View createScanButton() {
+                FrameLayout wrapperView = buildIconWrapperAligned(RelativeLayout.ALIGN_PARENT_RIGHT);
+                TextView scanTextView = buildCenteredGlyphTextView(GLYPH_SCAN, scanButtonColor);
+
+                wrapperView.addView(scanTextView);
+                wrapperView.setContentDescription("Scan Button");
+                wrapperView.setOnClickListener(InAppBrowser.this.onAction("scan"));
+                return wrapperView;
             }
 
             private View createCloseButton(int id) {
-                View _close;
-                Resources activityRes = cordova.getActivity().getResources();
+                final int TOOLBAR_SIZE_PX = dpToPixels(TOOLBAR_HEIGHT);
+
+                FrameLayout wrapperView;
+                TextView closeTextView;
 
                 if (closeButtonCaption != "") {
-                    // Use TextView for text
-                    TextView close = new TextView(cordova.getActivity());
-                    close.setText(closeButtonCaption);
-                    close.setTextSize(24);
-                    if (closeButtonColor != "") close.setTextColor(android.graphics.Color.parseColor(closeButtonColor));
-                    close.setGravity(android.view.Gravity.CENTER_VERTICAL);
-                    close.setPadding(this.dpToPixels(32), this.dpToPixels(8), this.dpToPixels(16), this.dpToPixels(8));
-                    _close = close;
+                    wrapperView = new FrameLayout(cordova.getActivity());
+
+                    RelativeLayout.LayoutParams wrapperLayoutParams =
+                            new RelativeLayout.LayoutParams(
+                                    RelativeLayout.LayoutParams.WRAP_CONTENT,
+                                    RelativeLayout.LayoutParams.MATCH_PARENT
+                            );
+                    wrapperLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+                    wrapperView.setLayoutParams(wrapperLayoutParams);
+
+                    closeTextView = new TextView(cordova.getActivity());
+                    closeTextView.setText(closeButtonCaption);
+                    closeTextView.setTextSize(16);
+                    closeTextView.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                    closeTextView.setPadding(
+                            dpToPixels(32), dpToPixels(8),
+                            dpToPixels(16), dpToPixels(8)
+                    );
+
+                    if (closeButtonColor != "") {
+                        closeTextView.setTextColor(android.graphics.Color.parseColor(closeButtonColor));
+                    } else {
+                        closeTextView.setTextColor(android.graphics.Color.BLACK);
+                    }
+
+                    FrameLayout.LayoutParams closeTextLayoutParams =
+                            new FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                                    android.view.Gravity.CENTER
+                            );
+                    closeTextView.setLayoutParams(closeTextLayoutParams);
+
+                    applyActiveBackground(wrapperView, dpToPixels(34));
+                    applyPressedTextColor(closeTextView);
+
+                } else {
+                    wrapperView = buildIconWrapperAligned(RelativeLayout.ALIGN_PARENT_LEFT);
+                    closeTextView = buildCenteredGlyphTextView(GLYPH_CLOSE, closeButtonColor);
                 }
-                else {
-                    TextView close = new TextView(cordova.getActivity());
-                    close.setTypeface(iconsTypeFace);
-                    close.setText(GLYPH_CLOSE);
-                    close.setTextSize(24);
-                    close.setGravity(Gravity.CENTER);
-                    if (!closeButtonColor.isEmpty()) close.setTextColor(Color.parseColor(closeButtonColor));
-                    close.setPadding(this.dpToPixels(24), 0, this.dpToPixels(24), 0);
 
-                    _close = close;
+                wrapperView.addView(closeTextView);
+                wrapperView.setContentDescription("Close Button");
+                wrapperView.setId(id);
+                wrapperView.setOnClickListener(InAppBrowser.this.onAction("close"));
+
+                return wrapperView;
+            }
+
+            private void applyActiveBackground(View view, float cornerRadiusPx) {
+                if (activeButtonColor == "") {
+                    return;
                 }
+                final int activeBg = android.graphics.Color.parseColor(activeButtonColor);
 
-                RelativeLayout.LayoutParams closeLayoutParams = new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-                closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-                // else closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                _close.setLayoutParams(closeLayoutParams);
-                _close.setBackground(null);
+                GradientDrawable normal = new GradientDrawable();
+                normal.setCornerRadius(cornerRadiusPx);
+                normal.setColor(Color.TRANSPARENT);
 
-                _close.setContentDescription("Close Button");
-                _close.setId(Integer.valueOf(id));
-                _close.setOnClickListener(InAppBrowser.this.onAction("close"));
+                GradientDrawable pressed = new GradientDrawable();
+                pressed.setCornerRadius(cornerRadiusPx);
+                pressed.setColor(activeBg);
 
-                return _close;
+                StateListDrawable stateList = new StateListDrawable();
+                stateList.addState(new int[]{android.R.attr.state_pressed, android.R.attr.state_enabled}, pressed);
+                stateList.addState(new int[]{android.R.attr.state_selected, android.R.attr.state_enabled}, pressed);
+                stateList.addState(new int[]{}, normal);
+
+                view.setBackground(stateList);
+
+                view.setClickable(true);
+                view.setFocusable(true);
+            }
+
+            private void applyPressedTextColor(TextView textView) {
+                final int activeFg = Color.BLACK;
+                int base = textView.getCurrentTextColor() == 0 ? Color.BLACK : textView.getCurrentTextColor();
+
+                int[][] states = new int[][]{
+                        new int[]{android.R.attr.state_pressed, android.R.attr.state_enabled},
+                        new int[]{android.R.attr.state_selected, android.R.attr.state_enabled},
+                        new int[]{}
+                };
+                int[] colors = new int[]{ activeFg, activeFg, base };
+
+                textView.setTextColor(new ColorStateList(states, colors));
             }
 
             @SuppressLint("NewApi")
@@ -949,9 +1045,10 @@ public class InAppBrowser extends CordovaPlugin {
                 toolbar.addView(close);
 
                 // Header Scan button
-                int scanuttonId = leftToRight ? 1 : 5;
-                View scan = createScanButton(scanuttonId);
-                toolbar.addView(scan);
+                if(showScanButton) {
+                    View scan = createScanButton();
+                    toolbar.addView(scan);
+                }
 
                 // Footer
                 RelativeLayout footer = new RelativeLayout(cordova.getActivity());
